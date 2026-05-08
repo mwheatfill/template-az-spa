@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Lint, typecheck, test, build
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Node
         uses: actions/setup-node@v5
