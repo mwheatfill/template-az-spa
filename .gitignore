@@ -1,0 +1,40 @@
+node_modules
+dist
+dist-ssr
+coverage
+.cache
+
+# IDE / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Build artefacts
+*.tsbuildinfo
+src/routeTree.gen.ts
+.tanstack/
+
+# Playwright
+/playwright-report
+/test-results
+/blob-report
+/playwright/.cache
+
+# SWA CLI
+.swa
+swa-cli.config.json
+
+# Intent
+.intent/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log

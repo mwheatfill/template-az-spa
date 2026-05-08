@@ -1,0 +1,24 @@
+{
+  "name": "api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "clean": "rm -rf dist",
+    "prestart": "npm run clean && npm run build",
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.13.1",
+    "@azure/identity": "^4.13.1",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "applicationinsights": "^3.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^6.0.3"
+  }
+}

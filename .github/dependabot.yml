@@ -1,0 +1,43 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "America/Phoenix"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "frontend"]
+    groups:
+      tanstack:
+        patterns: ["@tanstack/*"]
+      shadcn-ecosystem:
+        patterns: ["@radix-ui/*", "lucide-react", "tailwind*", "tw-animate-css", "shadcn"]
+      types:
+        patterns: ["@types/*"]
+      testing:
+        patterns: ["vitest", "@vitest/*", "@testing-library/*", "@playwright/*", "jsdom"]
+
+  - package-ecosystem: npm
+    directory: "/api"
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "America/Phoenix"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "api"]
+    groups:
+      azure:
+        patterns: ["@azure/*", "@microsoft/*", "applicationinsights"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+    labels: ["dependencies", "ci"]
