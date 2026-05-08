@@ -21,7 +21,8 @@ non-trivial changes. The architecture itself is defined in
 | Charts | shadcn charts / Recharts (add per-app) | |
 | Testing | Vitest + Testing Library (unit), Playwright (e2e) | |
 | Code quality | Biome 2 (single-tool: lint + format) | |
-| API runtime | Azure Functions v4 programming model on Node 22 | `api/src/functions/*.ts` registers handlers via `app.http(...)` |
+| API runtime | Azure Functions v4 programming model on Node 22 | `api/src/functions/*.ts` registers handlers via `registerFunction(...)` (see "Adding a Function") |
+| API contract | `@apvee/azure-functions-openapi` + Zod 3 | OpenAPI 3.1 auto-generated from endpoint metadata; served at `/api/openapi.json` and `/api/openapi.yaml` |
 
 ## Project structure
 
@@ -43,7 +44,7 @@ non-trivial changes. The architecture itself is defined in
 │   ├── index.css            # Tailwind v4 import + shadcn theme variables
 │   ├── main.tsx
 │   └── routeTree.gen.ts     # generated; gitignored
-├── api/                     # Azure Functions v4 (managed by SWA)
+├── api/                     # Azure Functions v4 (managed by SWA) + auto-OpenAPI
 │   ├── _shared/             # frozen reference patterns — match these in new endpoints
 │   │   ├── auth.ts          # decodes x-ms-client-principal
 │   │   ├── graph.ts         # app-only Graph client + token cache
@@ -51,10 +52,12 @@ non-trivial changes. The architecture itself is defined in
 │   ├── src/
 │   │   ├── functions/
 │   │   │   └── health.ts    # canonical endpoint pattern — copy this
-│   │   └── index.ts         # imports each function module to register handlers
+│   │   └── index.ts         # imports each function module + registers /api/openapi.{json,yaml}
 │   ├── host.json
 │   ├── package.json         # api has its OWN deps; do not merge with root
 │   └── tsconfig.json
+├── agent/                   # Empty by default. +copilot-agent recipe populates this.
+├── mcp/                     # Empty by default. +mcp-server recipe populates this.
 ├── e2e/                     # Playwright specs
 ├── scripts/
 │   ├── azure-deploy.sh      # one-shot bootstrap (idempotent)
@@ -101,13 +104,23 @@ npm run diagnose     # bash scripts/diagnose.sh — read-only Azure status
 
 ## Adding a Function
 
-**Always copy `api/src/functions/health.ts` and modify.** Don't invent variations.
+**Always copy `api/src/functions/health.ts` and modify.** Don't invent variations. The
+canonical pattern uses `registerFunction(...)` from `@apvee/azure-functions-openapi`, which
+registers the HTTP handler **and** captures OpenAPI metadata in one go — every new endpoint
+shows up in `/api/openapi.json` automatically.
 
 ```ts
 // api/src/functions/whoami.ts
-import { app, type HttpRequest, type HttpResponseInit } from "@azure/functions";
+import type { HttpRequest, HttpResponseInit } from "@azure/functions";
+import { registerFunction } from "@apvee/azure-functions-openapi";
+import { z } from "zod";  // Zod 3.x — apvee package requires it
 import { requirePrincipal, AuthError } from "../../_shared/auth.js";
 import { ok, unauthorized, serverError } from "../../_shared/http.js";
+
+const WhoamiResponse = z.object({
+  user: z.string(),
+  roles: z.array(z.string()),
+});
 
 async function whoami(req: HttpRequest): Promise<HttpResponseInit> {
   try {
@@ -119,13 +132,97 @@ async function whoami(req: HttpRequest): Promise<HttpResponseInit> {
   }
 }
 
-app.http("whoami", { route: "whoami", methods: ["GET"], authLevel: "anonymous", handler: whoami });
+registerFunction("whoami", "Identify the calling user", {
+  handler: whoami,
+  methods: ["GET"],
+  authLevel: "anonymous",
+  azureFunctionRoutePrefix: "api",
+  route: "whoami",
+  description: "Returns the EasyAuth principal: display name and roles.",
+  operationId: "getWhoami",
+  tags: ["Identity"],
+  responses: {
+    "200": {
+      description: "Authenticated principal.",
+      content: { "application/json": { schema: WhoamiResponse } },
+    },
+    "401": { description: "Not signed in." },
+  },
+});
 ```
 
 Then add `import "./functions/whoami.js";` to `api/src/index.ts` so the registration runs.
 
-`authLevel: "anonymous"` is correct — EasyAuth is what gates the request, not the Functions
-key model.
+`authLevel: "anonymous"` is correct — EasyAuth gates the request at the SWA layer, not the
+Functions key model.
+
+## API design for agents
+
+This template is **agent-ready by default**: every endpoint contributes to a current OpenAPI
+spec at `/api/openapi.json`. That spec is the single contract consumed by the SPA, MCP servers,
+Microsoft 365 Copilot plugins, and any future client. Don't fork it. Don't maintain a parallel
+hand-written one.
+
+When designing endpoints, follow these conventions so the same endpoints work cleanly for
+humans and agents:
+
+- **JSON in, JSON out.** No form-encoded bodies for new endpoints.
+- **Reads are idempotent.** Same input → same output. No hidden side effects on `GET`.
+- **Time queries take ISO-8601 strings.** Standard names: `at` (a single instant),
+  `from` / `until` (a window). Validate with `z.string().datetime()`.
+- **Pagination is explicit.** Use `limit` (number) and `cursor` (opaque string) when results
+  may exceed a single screen. Don't return everything by default.
+- **Every endpoint has a meaningful `operationId`.** Verb + noun, camelCase. LLMs surface this
+  in tool-call menus — `getOnCall` reads better than `route_oncall_get`.
+- **Tag endpoints by domain.** `tags: ["OnCall"]`, `tags: ["Identity"]`, etc. Keeps the
+  Swagger UI navigable and gives agents a coarse grouping.
+- **Response shapes stay flat where reasonable.** Named keys, not positional arrays. Small
+  objects beat deeply nested ones for tool calling.
+- **Document errors explicitly.** Add `4xx` / `5xx` entries to `responses` so agents know what
+  failure modes exist.
+
+### Per-route auth (agent invocation without EasyAuth)
+
+EasyAuth gates `/api/*` to signed-in tenant users. That works for the SPA (the user is signed
+in) and for delegated agents that flow user identity through. It **does not** work for service
+callers — an MCP server, a Copilot plugin running with app-only auth, a webhook.
+
+When an endpoint needs to be callable without an EasyAuth session, do this:
+
+1. Add the route to `staticwebapp.config.json` so it bypasses EasyAuth at the platform layer:
+
+   ```json
+   { "route": "/api/agent/*" }
+   ```
+
+   (No `allowedRoles` means anyone can hit it. The Function itself enforces auth.)
+
+2. In the Function, validate an API key the caller passes in a header:
+
+   ```ts
+   const expected = process.env.AGENT_API_KEY;
+   if (req.headers.get("x-agent-key") !== expected) return unauthorized();
+   ```
+
+3. Set `AGENT_API_KEY` as a SWA app setting via `az staticwebapp appsettings set` (never in
+   `staticwebapp.config.json` — that ships to the client).
+
+This keeps the EasyAuth-gated user routes simple and gives the agent a separate, scoped door
+with rotatable credentials.
+
+## Agent layers (`agent/` and `mcp/` folders)
+
+The template ships these folders **empty, with READMEs only** — the convention is in place
+but the implementation is opt-in via the
+[app-platform-recipes](https://github.com/mwheatfill/app-platform-recipes) repo:
+
+- **`agent/`** — Microsoft 365 Copilot declarative agent (manifest + plugin + Adaptive Card
+  templates). Install via the `+copilot-agent` recipe.
+- **`mcp/`** — Model Context Protocol server exposing the API as agent tools (for Claude
+  Desktop, Cursor, ChatGPT desktop, etc.). Install via the `+mcp-server` recipe.
+
+Both layers **wrap the existing OpenAPI spec** rather than reimplementing it. Don't duplicate
+endpoint logic — derive from the contract at `/api/openapi.json`.
 
 ## Adding a route
 

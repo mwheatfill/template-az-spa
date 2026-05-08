@@ -12,10 +12,12 @@
     "start": "func start"
   },
   "dependencies": {
+    "@apvee/azure-functions-openapi": "^1.0.2",
     "@azure/functions": "^4.13.1",
     "@azure/identity": "^4.13.1",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "applicationinsights": "^3.14.0"
+    "applicationinsights": "^3.14.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
