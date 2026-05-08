@@ -1,5 +1,5 @@
-import { registerFunction } from "@apvee/azure-functions-openapi";
-import type { HttpRequest, HttpResponseInit } from "@azure/functions";
+import "@apvee/azure-functions-openapi";
+import { app, type HttpRequest, type HttpResponseInit } from "@azure/functions";
 import { z } from "zod";
 import { getPrincipal } from "../../_shared/auth.js";
 import { ok } from "../../_shared/http.js";
@@ -7,7 +7,7 @@ import { ok } from "../../_shared/http.js";
 const HealthResponse = z.object({
   status: z.literal("ok"),
   service: z.string(),
-  timestamp: z.string().datetime(),
+  timestamp: z.iso.datetime(),
   version: z.string(),
   user: z.string().nullable(),
 });
@@ -23,22 +23,20 @@ export async function health(req: HttpRequest): Promise<HttpResponseInit> {
   });
 }
 
-registerFunction("health", "Health check", {
+app.openapiPath("health", "Health check", {
   handler: health,
   methods: ["GET"],
   authLevel: "anonymous",
-  azureFunctionRoutePrefix: "api",
   route: "health",
   description:
     "Liveness check. Returns service identity, build version, and the calling user if signed in.",
   operationId: "getHealth",
   tags: ["System"],
-  responses: {
-    "200": {
+  responses: [
+    {
+      httpCode: 200,
       description: "Service is alive.",
-      content: {
-        "application/json": { schema: HealthResponse },
-      },
+      schema: HealthResponse,
     },
-  },
+  ],
 });

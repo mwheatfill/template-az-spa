@@ -21,8 +21,8 @@ non-trivial changes. The architecture itself is defined in
 | Charts | shadcn charts / Recharts (add per-app) | |
 | Testing | Vitest + Testing Library (unit), Playwright (e2e) | |
 | Code quality | Biome 2 (single-tool: lint + format) | |
-| API runtime | Azure Functions v4 programming model on Node 22 | `api/src/functions/*.ts` registers handlers via `registerFunction(...)` (see "Adding a Function") |
-| API contract | `@apvee/azure-functions-openapi` + Zod 3 | OpenAPI 3.1 auto-generated from endpoint metadata; served at `/api/openapi.json` and `/api/openapi.yaml` |
+| API runtime | Azure Functions v4 programming model on Node 22 | `api/src/functions/*.ts` registers handlers via `app.openapiPath(...)` (see "Adding a Function") |
+| API contract | `@apvee/azure-functions-openapi@^2.0.0-alpha` + Zod 4 | OpenAPI 3.1 auto-generated from endpoint metadata; served at `/api/openapi.json`, `/api/openapi.yaml`, and Swagger UI at `/api/swagger-ui` |
 
 ## Project structure
 
@@ -105,17 +105,17 @@ npm run diagnose     # bash scripts/diagnose.sh — read-only Azure status
 ## Adding a Function
 
 **Always copy `api/src/functions/health.ts` and modify.** Don't invent variations. The
-canonical pattern uses `registerFunction(...)` from `@apvee/azure-functions-openapi`, which
-registers the HTTP handler **and** captures OpenAPI metadata in one go — every new endpoint
-shows up in `/api/openapi.json` automatically.
+canonical pattern uses `app.openapiPath(...)` from `@apvee/azure-functions-openapi` — module
+augmentation extends the `app` namespace so the same call registers the HTTP handler **and**
+captures OpenAPI metadata. Every new endpoint shows up in `/api/openapi.json` automatically.
 
 ```ts
 // api/src/functions/whoami.ts
-import type { HttpRequest, HttpResponseInit } from "@azure/functions";
-import { registerFunction } from "@apvee/azure-functions-openapi";
-import { z } from "zod";  // Zod 3.x — apvee package requires it
-import { requirePrincipal, AuthError } from "../../_shared/auth.js";
-import { ok, unauthorized, serverError } from "../../_shared/http.js";
+import "@apvee/azure-functions-openapi";
+import { app, type HttpRequest, type HttpResponseInit } from "@azure/functions";
+import { z } from "zod";
+import { AuthError, requirePrincipal } from "../../_shared/auth.js";
+import { ok, serverError, unauthorized } from "../../_shared/http.js";
 
 const WhoamiResponse = z.object({
   user: z.string(),
@@ -132,29 +132,29 @@ async function whoami(req: HttpRequest): Promise<HttpResponseInit> {
   }
 }
 
-registerFunction("whoami", "Identify the calling user", {
+app.openapiPath("whoami", "Identify the calling user", {
   handler: whoami,
   methods: ["GET"],
   authLevel: "anonymous",
-  azureFunctionRoutePrefix: "api",
   route: "whoami",
   description: "Returns the EasyAuth principal: display name and roles.",
   operationId: "getWhoami",
   tags: ["Identity"],
-  responses: {
-    "200": {
-      description: "Authenticated principal.",
-      content: { "application/json": { schema: WhoamiResponse } },
-    },
-    "401": { description: "Not signed in." },
-  },
+  responses: [
+    { httpCode: 200, schema: WhoamiResponse, description: "Authenticated principal." },
+    { httpCode: 401, description: "Not signed in." },
+  ],
 });
 ```
 
-Then add `import "./functions/whoami.js";` to `api/src/index.ts` so the registration runs.
+Then add `import "./functions/whoami.js";` to `api/src/index.ts` (after the `app.openapiSetup`
+call) so the registration runs at startup.
 
 `authLevel: "anonymous"` is correct — EasyAuth gates the request at the SWA layer, not the
 Functions key model.
+
+For richer endpoints with typed handlers (automatic param/body parsing + type inference),
+see the apvee v2 docs on `typedHandler`.
 
 ## API design for agents
 
