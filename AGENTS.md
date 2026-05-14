@@ -12,10 +12,10 @@ non-trivial changes. The architecture itself is defined in
 | Build | Vite 8 + Rolldown-when-stable | |
 | Framework | React 19, TypeScript 6, JSX automatic | |
 | Styling | Tailwind v4 via `@tailwindcss/vite` plugin (no `tailwind.config.ts`; theme in `src/index.css`) | |
-| Components | shadcn/ui (new-york style, neutral base, CSS variables) | Copied into `src/components/ui/`, not a runtime dep |
+| Components | shadcn/ui (`base-vega` style — Base UI primitive + Vega visual preset, neutral base, CSS variables) | Copied into `src/components/ui/`, not a runtime dep. Init with `npx shadcn init --base base --preset vega`. Don't mix Base UI and Radix primitives in the same project. |
 | Data fetching | TanStack Query 5 | Loaders for route-level data; `useQuery` inside components only when route loaders are wrong |
 | Routing | TanStack Router 1 (file-based, `@tanstack/router-plugin/vite`) | `src/routes/`, `routeTree.gen.ts` is generated and gitignored |
-| Animation | Tailwind v4 utilities + `tw-animate-css` | shadcn v4 dropped `tailwindcss-animate` |
+| Animation | Tailwind v4 utilities + `tw-animate-css` for primitive enter/exit (Dialog open, Sheet slide, etc.); `motion@12+` (formerly Framer Motion) for interactive / gesture / layout / scroll-linked animation when a specific surface needs it; `motion-primitives` registry is an option for pre-built animated components — add only when a concrete use case justifies it. | shadcn v4 dropped `tailwindcss-animate`. Don't add `motion` speculatively — `tw-animate-css` covers primitive needs. |
 | Toasts | Sonner | |
 | Forms | TanStack Form + Zod (when an app needs them; not pre-installed) | |
 | Charts | shadcn charts / Recharts (add per-app) | |
@@ -280,6 +280,14 @@ Either accept SWA Free + app settings, or upgrade to Standard for real managed i
 - **Don't edit `src/routeTree.gen.ts`.** It's generated. Edit route files instead.
 - **Don't edit `src/components/ui/*` by hand for major changes.** Use `npx shadcn add ...` /
   `npx shadcn diff ...` so we stay close to upstream.
+- **Don't mix Base UI and Radix primitives in the same project.** This template pins
+  `base-vega` (Base UI + Vega visual preset). All shadcn installs flow from the same
+  primitive layer. Switching is a one-way migration — pick one per project.
+- **Don't add `motion` (formerly Framer Motion) speculatively.** `tw-animate-css` covers
+  primitive enter/exit needs (Dialog, Sheet, Popover) — it ships with shadcn and is already
+  in this template. Only add `motion` when a specific surface needs interactive / gesture /
+  layout / scroll-linked animation that CSS utilities can't express. Same rule for
+  `motion-primitives` — install when a concrete use case justifies it, not as default.
 
 ## Verification discipline (the core point of this file)
 
